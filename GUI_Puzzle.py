@@ -17,7 +17,7 @@ class PuzzleConfigGUI(QWidget):
         # Mostrar el puzzle con un layout fijo
         self.puzzle_widget = QWidget()
         self.puzzle_grid = QGridLayout(self.puzzle_widget)
-        self.puzzle_grid.setSpacing(10)  # Espaciado fijo entre celdas
+        self.puzzle_grid.setSpacing(10)
         self.puzzle_grid.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
         # Selección del tamaño del puzzle
@@ -59,33 +59,68 @@ class PuzzleConfigGUI(QWidget):
         self.update_puzzle_display()
 
     def update_puzzle_display(self):
-        """Actualiza la visualización del puzzle manteniendo proporciones y dejando un hueco."""
+        """Inicializa la matriz del puzzle y la interfaz gráfica."""
+        size = int(self.size_combo.currentText().split('x')[0])
+        self.size = size
+        self.grid_state = [[i * size + j + 1 for j in range(size)] for i in range(size)]
+        self.grid_state[size - 1][size - 1] = None  # Última posición vacía
+
+        self.empty_tile = (size - 1, size - 1)  # Última posición vacía
+
+        self.refresh_puzzle_ui()
+
+    def refresh_puzzle_ui(self):
+        """Limpia y redibuja la interfaz gráfica del puzzle según `self.grid_state`."""
+        # Limpiar el grid anterior
         for i in reversed(range(self.puzzle_grid.count())):
             self.puzzle_grid.itemAt(i).widget().setParent(None)
-        
-        size = int(self.size_combo.currentText().split('x')[0])
+
+        self.tiles = {}
+        available_width = min(self.width(), self.height()) - 50
+        tile_size = (available_width - (self.size - 1) * 10) // self.size if self.size > 0 else 50
+        font_size = max(10, tile_size // 3)
         use_numbers = self.numbers_radio.isChecked()
-        available_width = min(self.width(), self.height()) - 50  # Asegurar cuadrícula dentro de la ventana
-        tile_size = (available_width - (size - 1) * 10) // size if size > 0 else 50  # Ajustar tamaño dinámico
-        font_size = max(10, tile_size // 3)  # Ajustar tamaño del número según el tile
-        
-        for i in range(size):
-            for j in range(size):
-                if i == size - 1 and j == size - 1:
-                    continue  # Dejar la última posición vacía
+
+        for i in range(self.size):
+            for j in range(self.size):
+                if self.grid_state[i][j] is None:
+                    continue  # Espacio vacío
                 
                 label = QLabel()
                 label.setFixedSize(QSize(tile_size, tile_size))
                 label.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 label.setStyleSheet(f"background-color: gray; border: 2px solid black; font-size: {font_size}px;")
-                
+
                 if use_numbers:
-                    label.setText(str(i * size + j + 1))
+                    label.setText(str(self.grid_state[i][j]))
                 else:
                     image = QPixmap("prueba.png").scaled(tile_size, tile_size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
                     label.setPixmap(image)
                 
+                label.mousePressEvent = self.create_mouse_press_event(i, j)
+                self.tiles[(i, j)] = label
                 self.puzzle_grid.addWidget(label, i, j)
+
+    def create_mouse_press_event(self, x, y):
+        """Crea un evento de clic para mover la ficha."""
+        def handler(event):
+            self.move_tile(x, y)
+        return handler
+
+    def move_tile(self, x, y):
+        """Mueve una ficha si hay un espacio vacío adyacente y actualiza la cuadrícula correctamente."""
+        empty_x, empty_y = self.empty_tile
+        
+        # Verificar si la ficha clicada está adyacente al espacio vacío
+        if (abs(x - empty_x) == 1 and y == empty_y) or (abs(y - empty_y) == 1 and x == empty_x):
+            # Intercambiar posiciones en `grid_state`
+            self.grid_state[empty_x][empty_y], self.grid_state[x][y] = self.grid_state[x][y], None
+
+            # Actualizar la posición del espacio vacío
+            self.empty_tile = (x, y)
+
+            # Redibujar la interfaz
+            self.refresh_puzzle_ui()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
