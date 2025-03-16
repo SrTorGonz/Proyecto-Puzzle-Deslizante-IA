@@ -17,7 +17,7 @@ class PuzzleConfigGUI(QWidget):
         # Mostrar el puzzle con un layout fijo
         self.puzzle_widget = QWidget()
         self.puzzle_grid = QGridLayout(self.puzzle_widget)
-        self.puzzle_grid.setSpacing(2)
+        self.puzzle_grid.setSpacing(10)
         self.puzzle_grid.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
         # Selección del tamaño del puzzle
@@ -40,13 +40,19 @@ class PuzzleConfigGUI(QWidget):
         self.numbers_radio.toggled.connect(self.update_puzzle_display)
         self.image_radio.toggled.connect(self.update_puzzle_display)
         
-        # Botones para definir estados
-        self.setup_initial_state_button = QPushButton("Definir Estado Inicial")
+        # Botón para definir estado final
         self.setup_final_state_button = QPushButton("Definir Estado Final")
 
-        buttons_layout = QHBoxLayout()
-        buttons_layout.addWidget(self.setup_initial_state_button)
+        # Botones para resolver el puzzle en una misma línea
+        self.solve_bfs_button = QPushButton("Resolver por Anchura")
+        self.solve_dfs_button = QPushButton("Resolver por Profundidad")
+        solve_buttons_layout = QHBoxLayout()
+        solve_buttons_layout.addWidget(self.solve_bfs_button)
+        solve_buttons_layout.addWidget(self.solve_dfs_button)
+        
+        buttons_layout = QVBoxLayout()
         buttons_layout.addWidget(self.setup_final_state_button)
+        buttons_layout.addLayout(solve_buttons_layout)
         
         # Añadir elementos al layout
         layout.addWidget(self.puzzle_widget, alignment=Qt.AlignmentFlag.AlignCenter)
