@@ -42,8 +42,9 @@ class PuzzleConfigGUI(QWidget):
         
         # Botón para definir estado final
         self.setup_final_state_button = QPushButton("Definir Estado Final")
+        self.setup_final_state_button.clicked.connect(self.save_final_state)
 
-        # Botones para resolver el puzzle en una misma línea
+        # Botones para resolver el puzzle
         self.solve_bfs_button = QPushButton("Resolver por Anchura")
         self.solve_dfs_button = QPushButton("Resolver por Profundidad")
         solve_buttons_layout = QHBoxLayout()
@@ -65,10 +66,10 @@ class PuzzleConfigGUI(QWidget):
         self.update_puzzle_display()
 
     def update_puzzle_display(self):
-        """Inicializa la matriz del puzzle y la interfaz gráfica."""
+        """Inicializa la matriz del puzzle con números y la interfaz gráfica."""
         size = int(self.size_combo.currentText().split('x')[0])
         self.size = size
-        self.grid_state = [[(i, j) for j in range(size)] for i in range(size)]
+        self.grid_state = [[i * size + j + 1 for j in range(size)] for i in range(size)]  # Números en la matriz
         self.grid_state[size - 1][size - 1] = None  # Última posición vacía
 
         self.empty_tile = (size - 1, size - 1)  # Última posición vacía
@@ -100,13 +101,14 @@ class PuzzleConfigGUI(QWidget):
                 label.setFixedSize(QSize(tile_size, tile_size))
                 label.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 label.setStyleSheet(f"background-color: gray; border: 2px solid black; font-size: {font_size}px;")
-
+                
                 if use_numbers:
-                    label.setText(str(self.grid_state[i][j][0] * self.size + self.grid_state[i][j][1] + 1))
+                    label.setText(str(self.grid_state[i][j]))  # Mostrar número
                 else:
-                    original_x, original_y = self.grid_state[i][j]
-                    cropped_piece = image.copy(original_y * piece_width, original_x * piece_height, piece_width, piece_height)
-                    pixmap = QPixmap.fromImage(cropped_piece).scaled(tile_size, tile_size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                    num = self.grid_state[i][j] - 1  # Número asignado a la pieza
+                    row, col = divmod(num, self.size)  # Posición original de la pieza en la imagen
+                    cropped_piece = image.copy(col * piece_width, row * piece_height, piece_width, piece_height)
+                    pixmap = QPixmap.fromImage(cropped_piece).scaled(tile_size, tile_size, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
                     label.setPixmap(pixmap)
                 
                 label.mousePressEvent = self.create_mouse_press_event(i, j)
@@ -133,6 +135,12 @@ class PuzzleConfigGUI(QWidget):
 
             # Redibujar la interfaz
             self.refresh_puzzle_ui()
+
+    def save_final_state(self):
+        """Guarda la configuración actual del puzzle como estado final y la imprime en la consola con números."""
+        print("Estado final guardado:")
+        for row in self.grid_state:
+            print([cell if cell is not None else "X" for cell in row])
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
