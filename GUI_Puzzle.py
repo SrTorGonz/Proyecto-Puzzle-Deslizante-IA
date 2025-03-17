@@ -1,11 +1,13 @@
-from PyQt6.QtWidgets import QApplication, QWidget, QLabel, QComboBox, QPushButton, QVBoxLayout, QHBoxLayout, QRadioButton, QGroupBox, QGridLayout
+from PyQt6.QtWidgets import QApplication, QWidget, QLabel, QComboBox, QPushButton, QVBoxLayout, QHBoxLayout, QRadioButton, QGroupBox, QGridLayout, QMessageBox
 from PyQt6.QtGui import QPixmap, QImage
-from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtCore import Qt, QSize, QTimer
 import sys
 
 class PuzzleConfigGUI(QWidget):
     def __init__(self):
         super().__init__()
+        self.final_state = None  
+        self.max_dfs_depth = 30  
         self.initUI()
 
     def initUI(self):
@@ -14,19 +16,16 @@ class PuzzleConfigGUI(QWidget):
 
         layout = QVBoxLayout()
 
-        # Mostrar el puzzle con un layout fijo
         self.puzzle_widget = QWidget()
         self.puzzle_grid = QGridLayout(self.puzzle_widget)
         self.puzzle_grid.setSpacing(10)
         self.puzzle_grid.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
-        # Selección del tamaño del puzzle
+
         self.size_label = QLabel("Selecciona el tamaño del puzzle:")
         self.size_combo = QComboBox()
         self.size_combo.addItems([f"{i}x{i}" for i in range(3, 10)])
         self.size_combo.currentIndexChanged.connect(self.update_puzzle_display)
 
-        # Selección de tipo de ficha
         self.appearance_group = QGroupBox("Apariencia de las fichas")
         appearance_layout = QVBoxLayout()
         self.numbers_radio = QRadioButton("Números")
@@ -39,23 +38,24 @@ class PuzzleConfigGUI(QWidget):
 
         self.numbers_radio.toggled.connect(self.update_puzzle_display)
         self.image_radio.toggled.connect(self.update_puzzle_display)
-        
-        # Botón para definir estado final
+
         self.setup_final_state_button = QPushButton("Definir Estado Final")
         self.setup_final_state_button.clicked.connect(self.save_final_state)
 
-        # Botones para resolver el puzzle
         self.solve_bfs_button = QPushButton("Resolver por Anchura")
+        self.solve_bfs_button.clicked.connect(self.solve_puzzle_bfs)
+
         self.solve_dfs_button = QPushButton("Resolver por Profundidad")
+        self.solve_dfs_button.clicked.connect(self.solve_puzzle_dfs)
+
         solve_buttons_layout = QHBoxLayout()
         solve_buttons_layout.addWidget(self.solve_bfs_button)
         solve_buttons_layout.addWidget(self.solve_dfs_button)
-        
+
         buttons_layout = QVBoxLayout()
         buttons_layout.addWidget(self.setup_final_state_button)
         buttons_layout.addLayout(solve_buttons_layout)
         
-        # Añadir elementos al layout
         layout.addWidget(self.puzzle_widget, alignment=Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.size_label)
         layout.addWidget(self.size_combo)
@@ -66,25 +66,20 @@ class PuzzleConfigGUI(QWidget):
         self.update_puzzle_display()
 
     def update_puzzle_display(self):
-        """Inicializa la matriz del puzzle con números y la interfaz gráfica."""
         size = int(self.size_combo.currentText().split('x')[0])
         self.size = size
-        self.grid_state = [[i * size + j + 1 for j in range(size)] for i in range(size)]  # Números en la matriz
-        self.grid_state[size - 1][size - 1] = None  # Última posición vacía
-
-        self.empty_tile = (size - 1, size - 1)  # Última posición vacía
-
+        self.grid_state = [[i * size + j + 1 for j in range(size)] for i in range(size)]
+        self.grid_state[size - 1][size - 1] = None  
+        self.empty_tile = (size - 1, size - 1)
         self.refresh_puzzle_ui()
 
     def refresh_puzzle_ui(self):
-        """Limpia y redibuja la interfaz gráfica del puzzle según `self.grid_state`."""
-        # Limpiar el grid anterior
         for i in reversed(range(self.puzzle_grid.count())):
             self.puzzle_grid.itemAt(i).widget().setParent(None)
 
         self.tiles = {}
         available_width = min(self.width(), self.height()) - 50
-        tile_size = (available_width - (self.size - 1) * 10) // self.size if self.size > 0 else 50
+        tile_size = (available_width - (self.size - 1) * 10) // self.size
         font_size = max(10, tile_size // 3)
         use_numbers = self.numbers_radio.isChecked()
 
@@ -95,20 +90,20 @@ class PuzzleConfigGUI(QWidget):
         for i in range(self.size):
             for j in range(self.size):
                 if self.grid_state[i][j] is None:
-                    continue  # Espacio vacío
-                
+                    continue  
+
                 label = QLabel()
                 label.setFixedSize(QSize(tile_size, tile_size))
                 label.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 label.setStyleSheet(f"background-color: gray; border: 2px solid black; font-size: {font_size}px;")
                 
                 if use_numbers:
-                    label.setText(str(self.grid_state[i][j]))  # Mostrar número
+                    label.setText(str(self.grid_state[i][j]))  
                 else:
-                    num = self.grid_state[i][j] - 1  # Número asignado a la pieza
-                    row, col = divmod(num, self.size)  # Posición original de la pieza en la imagen
+                    num = self.grid_state[i][j] - 1  
+                    row, col = divmod(num, self.size)
                     cropped_piece = image.copy(col * piece_width, row * piece_height, piece_width, piece_height)
-                    pixmap = QPixmap.fromImage(cropped_piece).scaled(tile_size, tile_size, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                    pixmap = QPixmap.fromImage(cropped_piece).scaled(tile_size, tile_size)
                     label.setPixmap(pixmap)
                 
                 label.mousePressEvent = self.create_mouse_press_event(i, j)
@@ -116,31 +111,63 @@ class PuzzleConfigGUI(QWidget):
                 self.puzzle_grid.addWidget(label, i, j)
 
     def create_mouse_press_event(self, x, y):
-        """Crea un evento de clic para mover la ficha."""
         def handler(event):
             self.move_tile(x, y)
         return handler
 
     def move_tile(self, x, y):
-        """Mueve una ficha si hay un espacio vacío adyacente y actualiza la cuadrícula correctamente."""
         empty_x, empty_y = self.empty_tile
         
-        # Verificar si la ficha clicada está adyacente al espacio vacío
         if (abs(x - empty_x) == 1 and y == empty_y) or (abs(y - empty_y) == 1 and x == empty_x):
-            # Intercambiar posiciones en `grid_state`
             self.grid_state[empty_x][empty_y], self.grid_state[x][y] = self.grid_state[x][y], None
-
-            # Actualizar la posición del espacio vacío
             self.empty_tile = (x, y)
-
-            # Redibujar la interfaz
             self.refresh_puzzle_ui()
 
     def save_final_state(self):
-        """Guarda la configuración actual del puzzle como estado final y la imprime en la consola con números."""
-        print("Estado final guardado:")
-        for row in self.grid_state:
-            print([cell if cell is not None else "X" for cell in row])
+        self.final_state = [row[:] for row in self.grid_state]  
+        QMessageBox.information(self, "Estado Final Guardado", "El estado final ha sido guardado correctamente.")
+
+    def solve_puzzle_bfs(self):
+        self.solve_puzzle("BFS")
+
+    def solve_puzzle_dfs(self):
+        self.solve_puzzle("DFS")
+
+    def solve_puzzle(self, algorithm):
+        if self.final_state is None:
+            QMessageBox.warning(self, "Error", "Primero debe guardar un estado final antes de resolver el puzzle.")
+            return
+
+        queue = [[self.grid_state, []]]
+        visited = set()
+
+        while queue:
+            state, path = queue.pop(0) if algorithm == "BFS" else queue.pop()
+
+            if str(state) in visited:
+                continue
+
+            visited.add(str(state))
+
+            if state == self.final_state:
+                self.animate_solution(path)
+                return
+
+            empty_x, empty_y = [(r, c) for r in range(self.size) for c in range(self.size) if state[r][c] is None][0]
+
+            for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                nx, ny = empty_x + dx, empty_y + dy
+                if 0 <= nx < self.size and 0 <= ny < self.size:
+                    new_state = [row[:] for row in state]
+                    new_state[empty_x][empty_y], new_state[nx][ny] = new_state[nx][ny], None
+                    queue.append([new_state, path + [(nx, ny)]])
+                    
+            if algorithm == "DFS" and len(path) > self.max_dfs_depth:
+                break  
+
+    def animate_solution(self, path):
+        for i, (x, y) in enumerate(path):
+            QTimer.singleShot(i * 250, lambda x=x, y=y: self.move_tile(x, y))
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
