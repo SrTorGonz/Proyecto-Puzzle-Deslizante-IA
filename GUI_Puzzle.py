@@ -17,14 +17,25 @@ def format_state_as_matrix(state):
     
 
 class TreeViewer(QWidget):
-    def __init__(self, tree_data):
+    def __init__(self, tree_data, puzzle_size):
         super().__init__()
         self.tree_data = tree_data
-        self.node_width = 80
-        self.node_height = 80
-        self.horizontal_spacing = 20
-        self.vertical_spacing = 120
-        self.node_positions = {}  # Ahora usaremos id(node) como clave
+        self.puzzle_size = puzzle_size
+        
+        # Ajustes dinámicos de tamaño basados en el puzzle
+        self.base_cell_size = 25  # Tamaño base para cada celda de la matriz
+        self.spacing_factor = 1.5  # Factor de espacio entre celdas
+        
+        # Cálculo del tamaño del nodo
+        self.cell_size = self.base_cell_size + max(0, (self.puzzle_size - 3) * 3)  # Aumenta más rápido después de 3x3
+        self.node_width = self.cell_size * (self.puzzle_size + self.spacing_factor)
+        self.node_height = self.cell_size * (self.puzzle_size + 0.8)
+        
+        # Espaciado entre nodos
+        self.horizontal_spacing = self.node_width * 0.6
+        self.vertical_spacing = self.node_height * 1.5
+        
+        self.node_info = {}
         self.initUI()
 
     def initUI(self):
@@ -46,12 +57,9 @@ class TreeViewer(QWidget):
         if not self.tree_data:
             return
             
-        # Diccionario para mapear nodos a sus posiciones y tamaños
-        self.node_info = {}  # {id(node): {'x': x, 'y': y, 'width': width, 'height': height}}
-        
-        # Primera pasada: dibujar todos los nodos y guardar sus posiciones
+        # Cálculo de niveles
         levels = {}
-        queue = [(self.tree_data, 0)]  # (nodo, nivel)
+        queue = [(self.tree_data, 0)]
         
         while queue:
             node, level = queue.pop(0)
@@ -62,7 +70,7 @@ class TreeViewer(QWidget):
             for child in node.get('children', []):
                 queue.append((child, level + 1))
         
-        # Calcular posiciones
+        # Dibujar nodos
         for level, nodes in levels.items():
             y = 50 + level * self.vertical_spacing
             total_width = len(nodes) * self.node_width + (len(nodes) - 1) * self.horizontal_spacing
@@ -78,7 +86,7 @@ class TreeViewer(QWidget):
                     'height': self.node_height
                 }
         
-        # Segunda pasada: dibujar conexiones
+        # Dibujar conexiones
         for level, nodes in levels.items():
             for node in nodes:
                 if 'children' in node:
@@ -87,11 +95,8 @@ class TreeViewer(QWidget):
                             parent_info = self.node_info[id(node)]
                             child_info = self.node_info[id(child)]
                             
-                            # Punto de salida (base del nodo padre)
                             x1 = parent_info['x'] + parent_info['width'] / 2
                             y1 = parent_info['y'] + parent_info['height']
-                            
-                            # Punto de llegada (parte superior del nodo hijo)
                             x2 = child_info['x'] + child_info['width'] / 2
                             y2 = child_info['y']
                             
@@ -116,28 +121,50 @@ class TreeViewer(QWidget):
         )
 
     def draw_node(self, node, x, y):
-        # Primero dibujamos un rectángulo normal
-        rect = self.scene.addRect(
-            x, y, self.node_width, self.node_height,
-            pen=QPen(Qt.GlobalColor.darkGray, 1.5),
-            brush=QBrush(Qt.GlobalColor.lightGray)
+        # Rectángulo con bordes redondeados
+        path = QPainterPath()
+        radius = 10
+        path.addRoundedRect(x, y, self.node_width, self.node_height, radius, radius)
+        self.scene.addPath(
+            path,
+            QPen(Qt.GlobalColor.darkGray, 1.5),
+            QBrush(Qt.GlobalColor.lightGray)
         )
         
-        # Contenido del nodo
         state = node.get('state', [])
         if state:
-            text = "\n".join([" ".join(f"{cell:>2}" if cell is not None else "  " for cell in row) 
-                            for row in state])
-            text_item = QGraphicsTextItem(text)
-            text_item.setDefaultTextColor(Qt.GlobalColor.black)
-            text_item.setFont(QFont("Courier New", 8))
-            text_item.setTextWidth(self.node_width - 10)
+            # Configuración de fuente dinámica
+            font_size = max(8, 12 - int(self.puzzle_size/2))
+            font = QFont("Courier New", font_size)
+            font.setStyleHint(QFont.StyleHint.Monospace)
             
-            # Centrar texto verticalmente
+            # Calcular el ancho necesario para cada celda
+            max_num = self.puzzle_size * self.puzzle_size
+            cell_width = len(str(max_num)) + 2  # Espacio extra para números grandes
+            
+            # Construir la matriz perfectamente alineada
+            matrix_lines = []
+            for row in state:
+                formatted_cells = []
+                for cell in row:
+                    if cell is None:
+                        formatted_cells.append(" " * cell_width)
+                    else:
+                        formatted_cells.append(f"{cell:^{cell_width}}")
+                matrix_lines.append(" ".join(formatted_cells))
+            
+            # Crear el texto
+            text_item = QGraphicsTextItem()
+            text_item.setFont(font)
+            text_item.setPlainText("\n".join(matrix_lines))
+            text_item.setDefaultTextColor(Qt.GlobalColor.black)
+            
+            # Ajustar y centrar el texto
             text_rect = text_item.boundingRect()
+            text_x = x + (self.node_width - text_rect.width()) / 2
             text_y = y + (self.node_height - text_rect.height()) / 2
             
-            text_item.setPos(x + 5, text_y)
+            text_item.setPos(text_x, text_y)
             self.scene.addItem(text_item)
 
 
@@ -329,7 +356,8 @@ class PuzzleConfigGUI(QWidget):
             QMessageBox.warning(self, "Error", "Primero debe resolver el puzzle para ver el árbol.")
             return
 
-        self.tree_viewer = TreeViewer(self.tree_data)
+        puzzle_size = int(self.size_combo.currentText().split('x')[0])
+        self.tree_viewer = TreeViewer(self.tree_data, puzzle_size)
         self.tree_viewer.show()
 
 
