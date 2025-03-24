@@ -3,6 +3,7 @@ from PyQt6.QtWidgets import (
     QRadioButton, QGroupBox, QGridLayout, QMessageBox, QGraphicsView, QGraphicsScene, QGraphicsTextItem
 )
 from PyQt6.QtGui import QPixmap, QImage, QFont, QPainter
+from PyQt6.QtGui import QPen, QBrush, QPainterPath
 from PyQt6.QtCore import Qt, QSize, QTimer
 import sys
 
@@ -13,70 +14,131 @@ def format_state_as_matrix(state):
         return "None"
     return "\n".join([" ".join([str(cell) if cell is not None else " " for cell in row]) for row in state])
 
+    
 
 class TreeViewer(QWidget):
     def __init__(self, tree_data):
         super().__init__()
         self.tree_data = tree_data
+        self.node_width = 80
+        self.node_height = 80
+        self.horizontal_spacing = 20
+        self.vertical_spacing = 120
+        self.node_positions = {}  # Ahora usaremos id(node) como clave
         self.initUI()
 
     def initUI(self):
         self.setWindowTitle("Árbol de Búsqueda")
         self.setGeometry(100, 100, 1200, 800)
-
+        
         self.scene = QGraphicsScene()
         self.view = QGraphicsView(self.scene)
-        self.view.setRenderHint(QPainter.RenderHint.Antialiasing)
-
+        self.view.setRenderHints(QPainter.RenderHint.Antialiasing | QPainter.RenderHint.TextAntialiasing)
+        self.view.setSceneRect(0, 0, 2000, 2000)
+        
         layout = QVBoxLayout()
         layout.addWidget(self.view)
         self.setLayout(layout)
+        
+        self.draw_tree()
 
-        # Llamar a draw_tree con un espaciado inicial más pequeño
-        self.draw_tree(self.tree_data, 600, 50, self.calculate_tree_width(self.tree_data) * 10)  # Reducir x_offset a 50
-
-    def calculate_tree_width(self, node):
-        """
-        Calcula el ancho necesario para el subárbol de un nodo.
-        """
-        if node is None or 'children' not in node or not node['children']:
-            return 1  # Si no tiene hijos, el ancho es 1
-
-        width = 0
-        for child in node['children']:
-            width += self.calculate_tree_width(child)
-        return width
-
-    def draw_tree(self, node, x, y, x_offset):
-        if node is None:
+    def draw_tree(self):
+        if not self.tree_data:
             return
+            
+        # Diccionario para mapear nodos a sus posiciones y tamaños
+        self.node_info = {}  # {id(node): {'x': x, 'y': y, 'width': width, 'height': height}}
+        
+        # Primera pasada: dibujar todos los nodos y guardar sus posiciones
+        levels = {}
+        queue = [(self.tree_data, 0)]  # (nodo, nivel)
+        
+        while queue:
+            node, level = queue.pop(0)
+            if level not in levels:
+                levels[level] = []
+            levels[level].append(node)
+            
+            for child in node.get('children', []):
+                queue.append((child, level + 1))
+        
+        # Calcular posiciones
+        for level, nodes in levels.items():
+            y = 50 + level * self.vertical_spacing
+            total_width = len(nodes) * self.node_width + (len(nodes) - 1) * self.horizontal_spacing
+            start_x = (2000 - total_width) / 2
+            
+            for i, node in enumerate(nodes):
+                x = start_x + i * (self.node_width + self.horizontal_spacing)
+                self.draw_node(node, x, y)
+                self.node_info[id(node)] = {
+                    'x': x,
+                    'y': y,
+                    'width': self.node_width,
+                    'height': self.node_height
+                }
+        
+        # Segunda pasada: dibujar conexiones
+        for level, nodes in levels.items():
+            for node in nodes:
+                if 'children' in node:
+                    for child in node['children']:
+                        if id(child) in self.node_info:
+                            parent_info = self.node_info[id(node)]
+                            child_info = self.node_info[id(child)]
+                            
+                            # Punto de salida (base del nodo padre)
+                            x1 = parent_info['x'] + parent_info['width'] / 2
+                            y1 = parent_info['y'] + parent_info['height']
+                            
+                            # Punto de llegada (parte superior del nodo hijo)
+                            x2 = child_info['x'] + child_info['width'] / 2
+                            y2 = child_info['y']
+                            
+                            self.draw_connection(x1, y1, x2, y2)
 
-        # Formatear el estado como una matriz
-        state_matrix = format_state_as_matrix(node['state'])
+    def draw_connection(self, x1, y1, x2, y2):
+        # Crear una línea recta con una flecha en el extremo inferior
+        line = self.scene.addLine(x1, y1, x2, y2, QPen(Qt.GlobalColor.white, 1.5))
+        
+        # Añadir una pequeña flecha (triángulo) en el extremo inferior
+        arrow_size = 5
+        arrow = QPainterPath()
+        arrow.moveTo(x2, y2)
+        arrow.lineTo(x2 - arrow_size, y2 + arrow_size * 2)
+        arrow.lineTo(x2 + arrow_size, y2 + arrow_size * 2)
+        arrow.closeSubpath()
+        
+        self.scene.addPath(
+            arrow,
+            QPen(Qt.GlobalColor.white, 1),
+            QBrush(Qt.GlobalColor.white)
+        )
 
-        # Dibujar el nodo actual
-        rect = QGraphicsTextItem(state_matrix)
-        rect.setFont(QFont("Arial", 8))
-        rect.setPos(x, y)
-        self.scene.addItem(rect)
-
-        # Dibujar las conexiones con los hijos
-        if 'children' in node and node['children']:
-            total_width = self.calculate_tree_width(node)  # Ancho total del subárbol
-            start_x = x - (total_width * x_offset) / 2  # Centrar los hijos debajo del nodo actual
-
-            for child in node['children']:
-                child_width = self.calculate_tree_width(child)  # Ancho del subárbol del hijo
-                child_x = start_x + (child_width * x_offset) / 2  # Posición horizontal del hijo
-                child_y = y + 100  # Espacio vertical entre niveles (reducido a 100)
-
-                # Dibujar una línea desde el nodo actual al hijo
-                self.scene.addLine(x + 40, y + 40, child_x + 40, child_y)
-
-                # Dibujar el subárbol del hijo
-                self.draw_tree(child, child_x, child_y, x_offset)
-
-                start_x += child_width * x_offset  # Mover la posición para el siguiente hijo
+    def draw_node(self, node, x, y):
+        # Primero dibujamos un rectángulo normal
+        rect = self.scene.addRect(
+            x, y, self.node_width, self.node_height,
+            pen=QPen(Qt.GlobalColor.darkGray, 1.5),
+            brush=QBrush(Qt.GlobalColor.lightGray)
+        )
+        
+        # Contenido del nodo
+        state = node.get('state', [])
+        if state:
+            text = "\n".join([" ".join(f"{cell:>2}" if cell is not None else "  " for cell in row) 
+                            for row in state])
+            text_item = QGraphicsTextItem(text)
+            text_item.setDefaultTextColor(Qt.GlobalColor.black)
+            text_item.setFont(QFont("Courier New", 8))
+            text_item.setTextWidth(self.node_width - 10)
+            
+            # Centrar texto verticalmente
+            text_rect = text_item.boundingRect()
+            text_y = y + (self.node_height - text_rect.height()) / 2
+            
+            text_item.setPos(x + 5, text_y)
+            self.scene.addItem(text_item)
 
 
 class PuzzleConfigGUI(QWidget):
