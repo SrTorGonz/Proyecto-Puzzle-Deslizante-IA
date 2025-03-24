@@ -370,13 +370,11 @@ class PuzzleConfigGUI(QWidget):
             QMessageBox.warning(self, "Error", "Primero debe guardar un estado final antes de resolver el puzzle.")
             return
 
-        # Guardar el estado inicial actual
         initial_state = [row[:] for row in self.grid_state]
-
-        # Inicializar la cola con el estado inicial y un nodo raíz
-        root_node = {'state': initial_state, 'children': [], 'parent': None}
+        root_node = {'state': initial_state, 'children': [], 'parent': None, 'depth': 0}
         queue = [[initial_state, [], root_node]]
         visited = set()
+        solution_depth = None  # Almacenará la profundidad donde se encontró la solución
 
         while queue:
             state, path, node = queue.pop(0) if algorithm == "BFS" else queue.pop()
@@ -392,8 +390,9 @@ class PuzzleConfigGUI(QWidget):
 
             if state == self.final_state:
                 self.animate_solution(path)
-                self.tree_data = root_node  # Almacenar el árbol completo
-                return
+                solution_depth = node['depth']
+                self.tree_data = root_node
+                break  # Salir del bucle cuando se encuentra la solución
 
             empty_x, empty_y = [(r, c) for r in range(self.size) for c in range(self.size) if state[r][c] is None][0]
 
@@ -403,11 +402,39 @@ class PuzzleConfigGUI(QWidget):
                     new_state = [row[:] for row in state]
                     new_state[empty_x][empty_y], new_state[nx][ny] = new_state[nx][ny], None
 
-                    # Crear un nuevo nodo hijo
-                    child_node = {'state': new_state, 'children': [], 'parent': node}
-                    node['children'].append(child_node)  # Agregar el hijo al nodo actual
-
+                    child_node = {
+                        'state': new_state, 
+                        'children': [], 
+                        'parent': node,
+                        'depth': node['depth'] + 1
+                    }
+                    node['children'].append(child_node)
                     queue.append([new_state, path + [(nx, ny)], child_node])
+
+        # Solo para BFS: eliminar nodos un nivel después de la solución
+        if algorithm == "BFS" and solution_depth is not None:
+            self.prune_bfs_tree(root_node, solution_depth)
+
+
+
+    def prune_bfs_tree(self, root_node, solution_depth):
+        """Elimina solo los nodos que están exactamente un nivel después del nivel de solución"""
+        from collections import deque
+        
+        queue = deque()
+        queue.append(root_node)
+        
+        while queue:
+            current_node = queue.popleft()
+            
+            # Si estamos en el nivel de solución, eliminamos todos sus hijos
+            if current_node['depth'] == solution_depth:
+                current_node['children'] = []
+            else:
+                # Si no, seguimos explorando los hijos
+                for child in current_node['children']:
+                    queue.append(child)
+
 
     def animate_solution(self, path):
         for i, (x, y) in enumerate(path):
