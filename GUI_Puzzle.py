@@ -6,7 +6,7 @@ from PyQt6.QtGui import QPixmap, QImage, QFont, QPainter
 from PyQt6.QtGui import QPen, QBrush, QPainterPath, QColor
 from PyQt6.QtCore import Qt, QSize, QTimer
 import sys
-
+import os
 
 # Función para formatear el estado como una matriz
 def format_state_as_matrix(state):
@@ -321,7 +321,24 @@ class PuzzleConfigGUI(QWidget):
         font_size = max(10, tile_size // 3)
         use_numbers = self.numbers_radio.isChecked()
 
-        image = QImage("prueba.png") if not use_numbers else None
+        if not use_numbers:
+        # Ruta compatible con PyInstaller y desarrollo
+            if getattr(sys, 'frozen', False):
+                # Si está empaquetado (.exe), la imagen está en la carpeta temporal
+                base_path = sys._MEIPASS
+            else:
+                # Si es el script .py, usa la ruta local
+                base_path = os.path.dirname(os.path.abspath(__file__))
+            
+            image_path = os.path.join(base_path, "prueba.png")
+            
+            if not os.path.exists(image_path):
+                raise FileNotFoundError(f"No se encontró la imagen en: {image_path}")
+            
+            image = QImage(image_path)
+        else:
+            image = None
+
         piece_width = image.width() // self.size if image else 0
         piece_height = image.height() // self.size if image else 0
 
