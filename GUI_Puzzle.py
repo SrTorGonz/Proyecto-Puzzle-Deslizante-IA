@@ -25,39 +25,87 @@ class TreeViewer(QWidget):
         self.puzzle_size = puzzle_size
         self.final_state = final_state
         
-        # Configuración de tamaños
-        self.base_cell_size = 25
-        self.spacing_factor = 1.5
-        self.cell_size = self.base_cell_size + max(0, (self.puzzle_size - 3) * 3)
-        self.node_width = self.cell_size * (self.puzzle_size + self.spacing_factor)
-        self.node_height = self.cell_size * (self.puzzle_size + 0.8)
-        self.horizontal_spacing = self.node_width * 0.6
-        self.vertical_spacing = self.node_height * 1.5
+        # Configuración de tamaños con espaciado aumentado
+        self.base_cell_size = 20
+        self.cell_size = max(15, self.base_cell_size - (self.puzzle_size - 3))
+        self.node_width = self.cell_size * (self.puzzle_size + 1)
+        self.node_height = self.cell_size * (self.puzzle_size + 0.5)
+        self.horizontal_spacing = self.node_width * 0.8
+        self.vertical_spacing = self.node_height * 2.0  # Espaciado vertical aumentado
+        
+        # Variables para panning
+        self.pan_start = None
+        self.panning = False
         
         self.node_info = {}
         self.initUI()
 
     def initUI(self):
-        self.setWindowTitle("Árbol de Búsqueda")
-        self.setGeometry(100, 100, 1200, 800)
+        self.setWindowTitle("Árbol de Búsqueda (Arrastrar con clic izquierdo)")
+        self.setGeometry(100, 100, 1200, 900)
         
         self.scene = QGraphicsScene()
-        self.view = QGraphicsView(self.scene)
-        self.view.setRenderHints(QPainter.RenderHint.Antialiasing | QPainter.RenderHint.TextAntialiasing)
-        self.view.setSceneRect(0, 0, 2000, 2000)
+        self.view = CustomGraphicsView(self.scene, self)
+        self.view.setRenderHints(QPainter.RenderHint.Antialiasing | 
+                               QPainter.RenderHint.TextAntialiasing |
+                               QPainter.RenderHint.SmoothPixmapTransform)
+        
+        # Configuración de scroll
+        self.view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         
         layout = QVBoxLayout()
         layout.addWidget(self.view)
         self.setLayout(layout)
         
         self.draw_tree()
+        
+        # Ajuste inicial de la vista
+        self.view.fitInView(self.scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
+
+    def wheelEvent(self, event):
+        """Zoom con la rueda del mouse"""
+        zoom_factor = 1.2
+        if event.angleDelta().y() > 0:
+            self.view.scale(zoom_factor, zoom_factor)
+        else:
+            self.view.scale(1/zoom_factor, 1/zoom_factor)
+
+    def mousePressEvent(self, event):
+        """Iniciar panning"""
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.pan_start = event.pos()
+            self.panning = True
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        """Mover la vista durante panning"""
+        if self.panning and self.pan_start:
+            delta = event.pos() - self.pan_start
+            self.pan_start = event.pos()
+            
+            # Mover la barra de scroll
+            h_bar = self.view.horizontalScrollBar()
+            v_bar = self.view.verticalScrollBar()
+            h_bar.setValue(h_bar.value() - delta.x())
+            v_bar.setValue(v_bar.value() - delta.y())
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        """Finalizar panning"""
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.panning = False
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+        super().mouseReleaseEvent(event)
 
     def draw_tree(self):
         if not self.tree_data:
             return
             
-        # Primera pasada: dibujar todos los nodos
+        # Calcular estructura del árbol
         levels = {}
+        max_level_width = 0
         queue = [(self.tree_data, 0)]
         
         while queue:
@@ -69,11 +117,18 @@ class TreeViewer(QWidget):
             for child in node.get('children', []):
                 queue.append((child, level + 1))
         
-        # Calcular posiciones y dibujar
+        # Calcular dimensiones totales con más margen
+        max_level_width = max(len(nodes) for nodes in levels.values())
+        total_height = len(levels) * self.vertical_spacing + 200
+        total_width = max_level_width * (self.node_width + self.horizontal_spacing) + 200
+        
+        self.scene.setSceneRect(-50, -50, total_width, total_height)
+        
+        # Dibujar nodos con espaciado vertical aumentado
         for level, nodes in levels.items():
             y = 50 + level * self.vertical_spacing
-            total_width = len(nodes) * self.node_width + (len(nodes) - 1) * self.horizontal_spacing
-            start_x = (2000 - total_width) / 2
+            level_width = len(nodes) * self.node_width + (len(nodes) - 1) * self.horizontal_spacing
+            start_x = (total_width - level_width) / 2
             
             for i, node in enumerate(nodes):
                 x = start_x + i * (self.node_width + self.horizontal_spacing)
@@ -85,66 +140,52 @@ class TreeViewer(QWidget):
                     'height': self.node_height
                 }
         
-        # Dibujar conexiones
+        # Dibujar conexiones más largas
         for level, nodes in levels.items():
             for node in nodes:
                 if 'children' in node:
                     for child in node['children']:
                         if id(child) in self.node_info:
-                            parent_info = self.node_info[id(node)]
-                            child_info = self.node_info[id(child)]
-                            
-                            x1 = parent_info['x'] + parent_info['width'] / 2
-                            y1 = parent_info['y'] + parent_info['height']
-                            x2 = child_info['x'] + child_info['width'] / 2
-                            y2 = child_info['y']
-                            
-                            self.draw_connection(x1, y1, x2, y2)
+                            self.draw_connection(node, child)
 
     def draw_node(self, node, x, y):
         state = node.get('state', [])
-        
-        # Determinar si es el estado final
         is_final = state == self.final_state
         
-        # Configurar colores
-        node_color = QColor(144, 238, 144) if is_final else QColor(220, 220, 220)  # Verde claro o gris claro
-        border_color = QColor(0, 100, 0) if is_final else QColor(100, 100, 100)     # Verde oscuro o gris oscuro
+        # Colores mejorados
+        node_color = QColor(180, 255, 180) if is_final else QColor(240, 240, 240)
+        border_color = QColor(0, 100, 0) if is_final else QColor(80, 80, 80)
         
         # Rectángulo con bordes redondeados
         path = QPainterPath()
-        radius = 10
+        radius = 5
         path.addRoundedRect(x, y, self.node_width, self.node_height, radius, radius)
         self.scene.addPath(
             path,
-            QPen(border_color, 1.5),
+            QPen(border_color, 1.2),
             QBrush(node_color)
         )
         
         if state:
-            # Configuración de texto
+            # Texto mejorado
             font_size = max(8, 12 - int(self.puzzle_size/2))
             font = QFont("Courier New", font_size)
             font.setStyleHint(QFont.StyleHint.Monospace)
             
+            # Formato compacto
             max_num = self.puzzle_size * self.puzzle_size
-            cell_width = len(str(max_num)) + 2
+            cell_width = len(str(max_num))
+            matrix_text = "\n".join(
+                " ".join(f"{cell:>{cell_width}}" if cell is not None else " " * cell_width 
+                        for cell in row)
+                for row in state
+            )
             
-            matrix_lines = []
-            for row in state:
-                formatted_cells = []
-                for cell in row:
-                    if cell is None:
-                        formatted_cells.append(" " * cell_width)
-                    else:
-                        formatted_cells.append(f"{cell:^{cell_width}}")
-                matrix_lines.append(" ".join(formatted_cells))
-            
-            text_item = QGraphicsTextItem()
+            text_item = QGraphicsTextItem(matrix_text)
             text_item.setFont(font)
-            text_item.setPlainText("\n".join(matrix_lines))
             text_item.setDefaultTextColor(Qt.GlobalColor.black)
             
+            # Centrado mejorado
             text_rect = text_item.boundingRect()
             text_x = x + (self.node_width - text_rect.width()) / 2
             text_y = y + (self.node_height - text_rect.height()) / 2
@@ -152,9 +193,41 @@ class TreeViewer(QWidget):
             text_item.setPos(text_x, text_y)
             self.scene.addItem(text_item)
 
-    def draw_connection(self, x1, y1, x2, y2):
-        # Línea de conexión
-        line = self.scene.addLine(x1, y1, x2, y2, QPen(Qt.GlobalColor.white, 1.5))
+    def draw_connection(self, parent_node, child_node):
+        parent_info = self.node_info[id(parent_node)]
+        child_info = self.node_info[id(child_node)]
+        
+        x1 = parent_info['x'] + parent_info['width'] / 2
+        y1 = parent_info['y'] + parent_info['height']
+        x2 = child_info['x'] + child_info['width'] / 2
+        y2 = child_info['y']
+        
+        # Línea de conexión más visible
+        line = self.scene.addLine(x1, y1, x2, y2, QPen(Qt.GlobalColor.white, 1.2))
+
+
+class CustomGraphicsView(QGraphicsView):
+    """Clase personalizada para mejor manejo de eventos"""
+    def __init__(self, scene, parent):
+        super().__init__(scene)
+        self.parent_viewer = parent
+        self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
+        
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.parent_viewer.mousePressEvent(event)
+        super().mousePressEvent(event)
+        
+    def mouseMoveEvent(self, event):
+        if self.parent_viewer.panning:
+            self.parent_viewer.mouseMoveEvent(event)
+        super().mouseMoveEvent(event)
+        
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.parent_viewer.mouseReleaseEvent(event)
+        super().mouseReleaseEvent(event)
+        
 
 
 class PuzzleConfigGUI(QWidget):
