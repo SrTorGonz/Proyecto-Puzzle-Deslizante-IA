@@ -3,7 +3,7 @@ from PyQt6.QtWidgets import (
     QRadioButton, QGroupBox, QGridLayout, QMessageBox, QGraphicsView, QGraphicsScene, QGraphicsTextItem
 )
 from PyQt6.QtGui import QPixmap, QImage, QFont, QPainter
-from PyQt6.QtGui import QPen, QBrush, QPainterPath
+from PyQt6.QtGui import QPen, QBrush, QPainterPath, QColor
 from PyQt6.QtCore import Qt, QSize, QTimer
 import sys
 
@@ -16,22 +16,21 @@ def format_state_as_matrix(state):
 
     
 
+from PyQt6.QtGui import QColor  # Añade esto al inicio con las otras importaciones
+
 class TreeViewer(QWidget):
-    def __init__(self, tree_data, puzzle_size):
+    def __init__(self, tree_data, puzzle_size, final_state):
         super().__init__()
         self.tree_data = tree_data
         self.puzzle_size = puzzle_size
+        self.final_state = final_state
         
-        # Ajustes dinámicos de tamaño basados en el puzzle
-        self.base_cell_size = 25  # Tamaño base para cada celda de la matriz
-        self.spacing_factor = 1.5  # Factor de espacio entre celdas
-        
-        # Cálculo del tamaño del nodo
-        self.cell_size = self.base_cell_size + max(0, (self.puzzle_size - 3) * 3)  # Aumenta más rápido después de 3x3
+        # Configuración de tamaños
+        self.base_cell_size = 25
+        self.spacing_factor = 1.5
+        self.cell_size = self.base_cell_size + max(0, (self.puzzle_size - 3) * 3)
         self.node_width = self.cell_size * (self.puzzle_size + self.spacing_factor)
         self.node_height = self.cell_size * (self.puzzle_size + 0.8)
-        
-        # Espaciado entre nodos
         self.horizontal_spacing = self.node_width * 0.6
         self.vertical_spacing = self.node_height * 1.5
         
@@ -57,7 +56,7 @@ class TreeViewer(QWidget):
         if not self.tree_data:
             return
             
-        # Cálculo de niveles
+        # Primera pasada: dibujar todos los nodos
         levels = {}
         queue = [(self.tree_data, 0)]
         
@@ -70,7 +69,7 @@ class TreeViewer(QWidget):
             for child in node.get('children', []):
                 queue.append((child, level + 1))
         
-        # Dibujar nodos
+        # Calcular posiciones y dibujar
         for level, nodes in levels.items():
             y = 50 + level * self.vertical_spacing
             total_width = len(nodes) * self.node_width + (len(nodes) - 1) * self.horizontal_spacing
@@ -102,47 +101,35 @@ class TreeViewer(QWidget):
                             
                             self.draw_connection(x1, y1, x2, y2)
 
-    def draw_connection(self, x1, y1, x2, y2):
-        # Crear una línea recta con una flecha en el extremo inferior
-        line = self.scene.addLine(x1, y1, x2, y2, QPen(Qt.GlobalColor.white, 1.5))
-        
-        # Añadir una pequeña flecha (triángulo) en el extremo inferior
-        arrow_size = 5
-        arrow = QPainterPath()
-        arrow.moveTo(x2, y2)
-        arrow.lineTo(x2 - arrow_size, y2 + arrow_size * 2)
-        arrow.lineTo(x2 + arrow_size, y2 + arrow_size * 2)
-        arrow.closeSubpath()
-        
-        self.scene.addPath(
-            arrow,
-            QPen(Qt.GlobalColor.white, 1),
-            QBrush(Qt.GlobalColor.white)
-        )
-
     def draw_node(self, node, x, y):
+        state = node.get('state', [])
+        
+        # Determinar si es el estado final
+        is_final = state == self.final_state
+        
+        # Configurar colores
+        node_color = QColor(144, 238, 144) if is_final else QColor(220, 220, 220)  # Verde claro o gris claro
+        border_color = QColor(0, 100, 0) if is_final else QColor(100, 100, 100)     # Verde oscuro o gris oscuro
+        
         # Rectángulo con bordes redondeados
         path = QPainterPath()
         radius = 10
         path.addRoundedRect(x, y, self.node_width, self.node_height, radius, radius)
         self.scene.addPath(
             path,
-            QPen(Qt.GlobalColor.darkGray, 1.5),
-            QBrush(Qt.GlobalColor.lightGray)
+            QPen(border_color, 1.5),
+            QBrush(node_color)
         )
         
-        state = node.get('state', [])
         if state:
-            # Configuración de fuente dinámica
+            # Configuración de texto
             font_size = max(8, 12 - int(self.puzzle_size/2))
             font = QFont("Courier New", font_size)
             font.setStyleHint(QFont.StyleHint.Monospace)
             
-            # Calcular el ancho necesario para cada celda
             max_num = self.puzzle_size * self.puzzle_size
-            cell_width = len(str(max_num)) + 2  # Espacio extra para números grandes
+            cell_width = len(str(max_num)) + 2
             
-            # Construir la matriz perfectamente alineada
             matrix_lines = []
             for row in state:
                 formatted_cells = []
@@ -153,19 +140,21 @@ class TreeViewer(QWidget):
                         formatted_cells.append(f"{cell:^{cell_width}}")
                 matrix_lines.append(" ".join(formatted_cells))
             
-            # Crear el texto
             text_item = QGraphicsTextItem()
             text_item.setFont(font)
             text_item.setPlainText("\n".join(matrix_lines))
             text_item.setDefaultTextColor(Qt.GlobalColor.black)
             
-            # Ajustar y centrar el texto
             text_rect = text_item.boundingRect()
             text_x = x + (self.node_width - text_rect.width()) / 2
             text_y = y + (self.node_height - text_rect.height()) / 2
             
             text_item.setPos(text_x, text_y)
             self.scene.addItem(text_item)
+
+    def draw_connection(self, x1, y1, x2, y2):
+        # Línea de conexión
+        line = self.scene.addLine(x1, y1, x2, y2, QPen(Qt.GlobalColor.white, 1.5))
 
 
 class PuzzleConfigGUI(QWidget):
@@ -357,7 +346,7 @@ class PuzzleConfigGUI(QWidget):
             return
 
         puzzle_size = int(self.size_combo.currentText().split('x')[0])
-        self.tree_viewer = TreeViewer(self.tree_data, puzzle_size)
+        self.tree_viewer = TreeViewer(self.tree_data, puzzle_size, self.final_state)
         self.tree_viewer.show()
 
 
