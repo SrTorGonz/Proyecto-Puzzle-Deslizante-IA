@@ -25,13 +25,13 @@ class TreeViewer(QWidget):
         self.puzzle_size = puzzle_size
         self.final_state = final_state
         
-        # Configuración de tamaños con espaciado aumentado
-        self.base_cell_size = 20
-        self.cell_size = max(15, self.base_cell_size - (self.puzzle_size - 3))
-        self.node_width = self.cell_size * (self.puzzle_size + 1)
-        self.node_height = self.cell_size * (self.puzzle_size + 0.5)
+        # Configuración de tamaños ajustada
+        self.base_cell_size = 30  # Aumentamos el tamaño base
+        self.cell_size = max(20, self.base_cell_size - (self.puzzle_size - 3) * 2)  # Reducción más gradual
+        self.node_width = self.cell_size * (self.puzzle_size + 2)  # Más espacio horizontal
+        self.node_height = self.cell_size * (self.puzzle_size + 1)  # Más espacio vertical
         self.horizontal_spacing = self.node_width * 0.8
-        self.vertical_spacing = self.node_height * 2.0  # Espaciado vertical aumentado
+        self.vertical_spacing = self.node_height * 2.0
         
         # Variables para panning
         self.pan_start = None
